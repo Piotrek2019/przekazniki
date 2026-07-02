@@ -74,6 +74,7 @@
   <input type="text" id="inpPrefix" placeholder="esp32relay" value="esp32relay" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
 
   <button onclick="zaloguj()">Polacz</button>
+  <button type="button" onclick="testRawWebSocket()" style="margin-top:10px; background:#555;">Test surowego WebSocket (diagnostyka)</button>
   <div id="loginError"></div>
   <div class="hint">Dane sa zapisywane wylacznie lokalnie w tej przegladarce (localStorage) i nigdy nie sa wysylane nigdzie indziej.</div>
 </div>
@@ -106,6 +107,45 @@ function getConfig() {
 
 function saveConfig(cfg) {
   localStorage.setItem('mqttConfig', JSON.stringify(cfg));
+}
+
+function testRawWebSocket() {
+  const host = document.getElementById('inpHost').value.trim();
+  const errEl = document.getElementById('loginError');
+  if (!host) {
+    errEl.textContent = 'Wpisz najpierw Cluster URL.';
+    return;
+  }
+  errEl.style.color = '#4caf50';
+  errEl.textContent = 'Testuje surowe polaczenie WebSocket...';
+
+  const url = `wss://${host}:8884/mqtt`;
+  let ws;
+  try {
+    ws = new WebSocket(url, ['mqtt']);
+  } catch (e) {
+    errEl.style.color = '#f44336';
+    errEl.textContent = 'Wyjatek przy tworzeniu WebSocket: ' + e.message;
+    return;
+  }
+
+  const start = Date.now();
+
+  ws.onopen = () => {
+    errEl.style.color = '#4caf50';
+    errEl.textContent = `WebSocket OTWARTY (${Date.now() - start}ms) - transport dziala! Zamykam test.`;
+    setTimeout(() => ws.close(), 500);
+  };
+
+  ws.onerror = (e) => {
+    errEl.style.color = '#f44336';
+    errEl.textContent += ' | Zdarzenie onerror (surowy WS).';
+  };
+
+  ws.onclose = (e) => {
+    errEl.style.color = '#f44336';
+    errEl.textContent = `WebSocket ZAMKNIETY po ${Date.now() - start}ms | code=${e.code} reason="${e.reason}" wasClean=${e.wasClean}`;
+  };
 }
 
 function zaloguj() {
