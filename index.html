@@ -62,16 +62,16 @@
   <p style="color:#999; font-size:0.9em;">Wpisz dane polaczenia z brokerem MQTT (zapisywane tylko w tej przegladarce).</p>
 
   <label for="inpHost">Cluster URL (HiveMQ)</label>
-  <input type="text" id="inpHost" placeholder="np. xxxxx.s1.eu.hivemq.cloud">
+  <input type="text" id="inpHost" placeholder="np. xxxxx.s1.eu.hivemq.cloud" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
 
   <label for="inpUser">Login MQTT</label>
-  <input type="text" id="inpUser" placeholder="login">
+  <input type="text" id="inpUser" placeholder="login" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
 
   <label for="inpPass">Haslo MQTT</label>
-  <input type="password" id="inpPass" placeholder="haslo">
+  <input type="password" id="inpPass" placeholder="haslo" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
 
   <label for="inpPrefix">Prefiks tematow (musi byc taki sam jak w ESP32)</label>
-  <input type="text" id="inpPrefix" placeholder="esp32relay" value="esp32relay">
+  <input type="text" id="inpPrefix" placeholder="esp32relay" value="esp32relay" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
 
   <button onclick="zaloguj()">Polacz</button>
   <div id="loginError"></div>
@@ -111,7 +111,7 @@ function saveConfig(cfg) {
 function zaloguj() {
   const host = document.getElementById('inpHost').value.trim();
   const user = document.getElementById('inpUser').value.trim();
-  const pass = document.getElementById('inpPass').value;
+  const pass = document.getElementById('inpPass').value.trim();
   const prefix = document.getElementById('inpPrefix').value.trim() || 'esp32relay';
   const errEl = document.getElementById('loginError');
 
