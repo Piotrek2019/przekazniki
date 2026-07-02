@@ -81,6 +81,7 @@
 <div id="controlPanel">
   <h1>Sterowanie przekaznikami</h1>
   <div id="statusBar" class="status-bar">Laczenie...</div>
+  <div id="debugLog" style="font-size:0.75em; color:#666; text-align:left; max-width:700px; margin:0 auto 20px; word-break:break-all;"></div>
 
   <div class="grid" id="grid"></div>
 
@@ -166,6 +167,12 @@ function wyslijWszystkie(wlacz) {
   client.publish(`${mqttPrefix}/cmd/all`, wlacz ? 'ON' : 'OFF');
 }
 
+function log(msg) {
+  const el = document.getElementById('debugLog');
+  const czas = new Date().toLocaleTimeString();
+  el.textContent = `[${czas}] ${msg}\n` + el.textContent;
+}
+
 function polaczMqtt(cfg) {
   mqttPrefix = cfg.prefix;
   document.getElementById('loginScreen').style.display = 'none';
@@ -177,6 +184,7 @@ function polaczMqtt(cfg) {
   statusBar.className = 'status-bar';
 
   const url = `wss://${cfg.host}:8884/mqtt`;
+  log('Probuje polaczyc: ' + url);
   client = mqtt.connect(url, {
     username: cfg.user,
     password: cfg.pass,
@@ -185,22 +193,34 @@ function polaczMqtt(cfg) {
   });
 
   client.on('connect', () => {
+    log('Zdarzenie: connect (sukces)');
     statusBar.textContent = 'Polaczono';
     statusBar.className = 'status-bar connected';
     client.subscribe(`${mqttPrefix}/state`);
   });
 
   client.on('reconnect', () => {
+    log('Zdarzenie: reconnect');
     statusBar.textContent = 'Laczenie ponownie...';
     statusBar.className = 'status-bar';
   });
 
   client.on('error', (err) => {
-    statusBar.textContent = 'Blad polaczenia - sprawdz dane logowania';
+    const msg = (err && err.message) ? err.message : JSON.stringify(err);
+    log('Zdarzenie: error - ' + msg);
+    statusBar.textContent = 'Blad: ' + msg;
+    statusBar.className = 'status-bar error';
+    console.error('MQTT error:', err);
+  });
+
+  client.on('close', () => {
+    log('Zdarzenie: close');
+    statusBar.textContent = 'Polaczenie zamkniete (close)';
     statusBar.className = 'status-bar error';
   });
 
   client.on('offline', () => {
+    log('Zdarzenie: offline');
     statusBar.textContent = 'Brak polaczenia';
     statusBar.className = 'status-bar error';
   });
