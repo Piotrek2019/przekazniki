@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sterowanie przekaznikami</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #1e1e2f;
+    color: #fff;
+    margin: 0;
+    padding: 30px 15px;
+    text-align: center;
+  }
+  h1 { font-size: 1.4em; margin-bottom: 6px; }
+  .status-bar { color: #999; font-size: 0.85em; margin-bottom: 25px; }
+  .status-bar.connected { color: #4caf50; }
+  .status-bar.error { color: #f44336; }
+
+  /* Ekran logowania */
+  #loginScreen { max-width: 420px; margin: 60px auto 0; text-align: left; }
+  #loginScreen label { display: block; margin: 14px 0 6px; font-size: 0.9em; color: #ccc; }
+  #loginScreen input {
+    width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #444;
+    background: #2a2a40; color: #fff; font-size: 1em;
+  }
+  #loginScreen button {
+    margin-top: 24px; width: 100%; padding: 14px; border: none; border-radius: 10px;
+    background: #4caf50; color: #fff; font-size: 1.1em; cursor: pointer;
+  }
+  #loginError { color: #f44336; margin-top: 12px; font-size: 0.9em; min-height: 1.2em; }
+  .hint { color: #777; font-size: 0.8em; margin-top: 20px; }
+
+  /* Panel sterowania */
+  #controlPanel { display: none; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px; max-width: 700px; margin: 0 auto;
+  }
+  .card { background: #2a2a40; border-radius: 14px; padding: 20px; }
+  .label { font-size: 1.1em; margin-bottom: 8px; }
+  .status-txt { margin-bottom: 14px; font-weight: bold; }
+  .on { color: #4caf50; } .off { color: #f44336; }
+  button.relay-btn {
+    width: 100%; font-size: 1.1em; padding: 14px; border: none; border-radius: 10px;
+    cursor: pointer; color: #fff; transition: 0.2s;
+  }
+  .btn-on { background: #4caf50; } .btn-off { background: #f44336; }
+  button:active { transform: scale(0.96); }
+  .all-row { margin-top: 30px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .all-row button { width: auto; padding: 14px 30px; }
+  .logout-link { display: block; margin-top: 30px; color: #777; font-size: 0.85em; cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <h1>Sterowanie przekaznikami</h1>
+  <p style="color:#999; font-size:0.9em;">Wpisz dane polaczenia z brokerem MQTT (zapisywane tylko w tej przegladarce).</p>
+
+  <label for="inpHost">Cluster URL (HiveMQ)</label>
+  <input type="text" id="inpHost" placeholder="np. xxxxx.s1.eu.hivemq.cloud">
+
+  <label for="inpUser">Login MQTT</label>
+  <input type="text" id="inpUser" placeholder="login">
+
+  <label for="inpPass">Haslo MQTT</label>
+  <input type="password" id="inpPass" placeholder="haslo">
+
+  <label for="inpPrefix">Prefiks tematow (musi byc taki sam jak w ESP32)</label>
+  <input type="text" id="inpPrefix" placeholder="esp32relay" value="esp32relay">
+
+  <button onclick="zaloguj()">Polacz</button>
+  <div id="loginError"></div>
+  <div class="hint">Dane sa zapisywane wylacznie lokalnie w tej przegladarce (localStorage) i nigdy nie sa wysylane nigdzie indziej.</div>
+</div>
+
+<div id="controlPanel">
+  <h1>Sterowanie przekaznikami</h1>
+  <div id="statusBar" class="status-bar">Laczenie...</div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="all-row">
+    <button class="btn-on relay-btn" style="width:auto;" onclick="wyslijWszystkie(true)">WLACZ WSZYSTKIE</button>
+    <button class="btn-off relay-btn" style="width:auto;" onclick="wyslijWszystkie(false)">WYLACZ WSZYSTKIE</button>
+  </div>
+
+  <div class="logout-link" onclick="wyloguj()">Wyloguj / zmien dane polaczenia</div>
+</div>
+
+<script>
+const NUM_RELAYS = 6;
+let client = null;
+let relayState = new Array(NUM_RELAYS).fill(false);
+let mqttPrefix = "esp32relay";
+
+function getConfig() {
+  const raw = localStorage.getItem('mqttConfig');
+  return raw ? JSON.parse(raw) : null;
+}
+
+function saveConfig(cfg) {
+  localStorage.setItem('mqttConfig', JSON.stringify(cfg));
+}
+
+function zaloguj() {
+  const host = document.getElementById('inpHost').value.trim();
+  const user = document.getElementById('inpUser').value.trim();
+  const pass = document.getElementById('inpPass').value;
+  const prefix = document.getElementById('inpPrefix').value.trim() || 'esp32relay';
+  const errEl = document.getElementById('loginError');
+
+  if (!host || !user || !pass) {
+    errEl.textContent = 'Wypelnij wszystkie pola.';
+    return;
+  }
+  errEl.textContent = '';
+  saveConfig({ host, user, pass, prefix });
+  polaczMqtt({ host, user, pass, prefix });
+}
+
+function wyloguj() {
+  localStorage.removeItem('mqttConfig');
+  if (client) client.end(true);
+  document.getElementById('controlPanel').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+}
+
+function budujPanel() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < NUM_RELAYS; i++) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="label">Kanal ${i + 1}</div>
+      <div class="status-txt ${relayState[i] ? 'on' : 'off'}" id="status${i}">${relayState[i] ? 'WLACZONY' : 'WYLACZONY'}</div>
+      <button class="relay-btn ${relayState[i] ? 'btn-off' : 'btn-on'}" id="btn${i}" onclick="przelacz(${i})">
+        ${relayState[i] ? 'WYLACZ' : 'WLACZ'}
+      </button>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+function odswiezPrzycisk(i) {
+  const statusEl = document.getElementById('status' + i);
+  const btnEl = document.getElementById('btn' + i);
+  if (!statusEl || !btnEl) return;
+  statusEl.textContent = relayState[i] ? 'WLACZONY' : 'WYLACZONY';
+  statusEl.className = 'status-txt ' + (relayState[i] ? 'on' : 'off');
+  btnEl.textContent = relayState[i] ? 'WYLACZ' : 'WLACZ';
+  btnEl.className = 'relay-btn ' + (relayState[i] ? 'btn-off' : 'btn-on');
+}
+
+function przelacz(i) {
+  const nowyStan = !relayState[i];
+  client.publish(`${mqttPrefix}/cmd/${i + 1}`, nowyStan ? 'ON' : 'OFF');
+}
+
+function wyslijWszystkie(wlacz) {
+  client.publish(`${mqttPrefix}/cmd/all`, wlacz ? 'ON' : 'OFF');
+}
+
+function polaczMqtt(cfg) {
+  mqttPrefix = cfg.prefix;
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('controlPanel').style.display = 'block';
+  budujPanel();
+
+  const statusBar = document.getElementById('statusBar');
+  statusBar.textContent = 'Laczenie z brokerem...';
+  statusBar.className = 'status-bar';
+
+  const url = `wss://${cfg.host}:8884/mqtt`;
+  client = mqtt.connect(url, {
+    username: cfg.user,
+    password: cfg.pass,
+    clientId: 'web-' + Math.random().toString(16).slice(2, 10),
+    reconnectPeriod: 3000,
+  });
+
+  client.on('connect', () => {
+    statusBar.textContent = 'Polaczono';
+    statusBar.className = 'status-bar connected';
+    client.subscribe(`${mqttPrefix}/state`);
+  });
+
+  client.on('reconnect', () => {
+    statusBar.textContent = 'Laczenie ponownie...';
+    statusBar.className = 'status-bar';
+  });
+
+  client.on('error', (err) => {
+    statusBar.textContent = 'Blad polaczenia - sprawdz dane logowania';
+    statusBar.className = 'status-bar error';
+  });
+
+  client.on('offline', () => {
+    statusBar.textContent = 'Brak polaczenia';
+    statusBar.className = 'status-bar error';
+  });
+
+  client.on('message', (topic, payload) => {
+    if (topic === `${mqttPrefix}/state`) {
+      const wartosci = payload.toString().split(',');
+      for (let i = 0; i < NUM_RELAYS && i < wartosci.length; i++) {
+        relayState[i] = wartosci[i] === '1';
+        odswiezPrzycisk(i);
+      }
+    }
+  });
+}
+
+// Autologowanie, jesli dane juz sa zapisane
+window.addEventListener('load', () => {
+  const cfg = getConfig();
+  if (cfg) {
+    document.getElementById('inpHost').value = cfg.host;
+    document.getElementById('inpUser').value = cfg.user;
+    document.getElementById('inpPrefix').value = cfg.prefix;
+    polaczMqtt(cfg);
+  }
+});
+</script>
+</body>
+</html>
