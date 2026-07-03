@@ -110,7 +110,7 @@ function saveConfig(cfg) {
 }
 
 function testRawWebSocket() {
-  const host = document.getElementById('inpHost').value.trim();
+  const host = oczyscHost(document.getElementById('inpHost').value);
   const errEl = document.getElementById('loginError');
   if (!host) {
     errEl.textContent = 'Wpisz najpierw Cluster URL.';
@@ -148,8 +148,16 @@ function testRawWebSocket() {
   };
 }
 
+function oczyscHost(surowy) {
+  return surowy
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^wss?:\/\//i, '')
+    .replace(/\/+$/, ''); // usun koncowe ukosniki
+}
+
 function zaloguj() {
-  const host = document.getElementById('inpHost').value.trim();
+  const host = oczyscHost(document.getElementById('inpHost').value);
   const user = document.getElementById('inpUser').value.trim();
   const pass = document.getElementById('inpPass').value.trim();
   const prefix = document.getElementById('inpPrefix').value.trim() || 'esp32relay';
