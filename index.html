@@ -91,6 +91,10 @@
     <button class="btn-off relay-btn" style="width:auto;" onclick="wyslijWszystkie(false)">WYLACZ WSZYSTKIE</button>
   </div>
 
+  <div id="statsPanel" style="max-width:700px; margin:30px auto 0; background:#2a2a40; border-radius:14px; padding:16px 20px; font-size:0.85em; color:#aaa; text-align:left;">
+    Oczekiwanie na statystyki urzadzenia...
+  </div>
+
   <div class="logout-link" onclick="wyloguj()">Wyloguj / zmien dane polaczenia</div>
 </div>
 
@@ -245,6 +249,7 @@ function polaczMqtt(cfg) {
     statusBar.textContent = 'Polaczono';
     statusBar.className = 'status-bar connected';
     client.subscribe(`${mqttPrefix}/state`);
+    client.subscribe(`${mqttPrefix}/stats`);
   });
 
   client.on('reconnect', () => {
@@ -280,6 +285,18 @@ function polaczMqtt(cfg) {
         relayState[i] = wartosci[i] === '1';
         odswiezPrzycisk(i);
       }
+    } else if (topic === `${mqttPrefix}/stats`) {
+      const [wolnaKB, calaKB, rssi, uptimeSek, cpuMHz] = payload.toString().split(',').map(Number);
+      const godziny = Math.floor(uptimeSek / 3600);
+      const minuty = Math.floor((uptimeSek % 3600) / 60);
+      const sekundy = Math.floor(uptimeSek % 60);
+      const procentZajete = (100 * (calaKB - wolnaKB) / calaKB).toFixed(1);
+      document.getElementById('statsPanel').innerHTML = `
+        <div><b style="color:#fff;">Pamiec RAM:</b> ${wolnaKB} KB wolne z ${calaKB} KB (zajete ${procentZajete}%)</div>
+        <div><b style="color:#fff;">Sila sygnalu WiFi:</b> ${rssi} dBm</div>
+        <div><b style="color:#fff;">Czas dzialania:</b> ${godziny}h ${minuty}m ${sekundy}s</div>
+        <div><b style="color:#fff;">Czestotliwosc CPU:</b> ${cpuMHz} MHz</div>
+      `;
     }
   });
 }
